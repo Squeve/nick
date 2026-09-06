@@ -26182,7 +26182,7 @@ function msgBankOpenGenerate() {
         </select>
       </div>
       <input id="mg-name" placeholder="Borrower name (optional — fills [Name] in the preview)" class="form-input" style="font-size:var(--text-base)">
-      <div id="mg-result" style="display:none;margin-top:6px;padding:12px;border:1px solid var(--border2);border-radius:var(--radius-md);background:var(--bg2)">
+      <div id="mg-result" style="display:none;margin-top:6px;padding:12px;border:1px solid var(--border2);border-radius:var(--radius-md);background:var(--surface2)">
         <div id="mg-result-meta" style="font-size:var(--text-xs);color:var(--text3);margin-bottom:6px"></div>
         <div id="mg-result-body" style="font-size:var(--text-base);line-height:1.7;white-space:pre-wrap"></div>
       </div>
@@ -26809,7 +26809,7 @@ loadChartJS().catch(e => console.warn('Chart.js failed to load:', e));
         if (document.getElementById('sq-update-banner')) return; // already shown
         var el = document.createElement('div');
         el.id = 'sq-update-banner';
-        el.style.cssText = 'position:fixed;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));z-index:99999;background:var(--gold,#f0a030);color:#000;border-radius:14px;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px;box-shadow:0 6px 24px rgba(0,0,0,0.35);font-family:inherit;font-size:14px;font-weight:600';
+        el.style.cssText = 'position:fixed;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));z-index:100000;background:var(--gold,#f0a030);color:#000;border-radius:14px;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px;box-shadow:0 6px 24px rgba(0,0,0,0.35);font-family:inherit;font-size:14px;font-weight:600';
         el.innerHTML = '<span>A new version is ready.</span>'
           + '<button style="background:#000;color:var(--gold,#f0a030);border:none;border-radius:8px;padding:8px 14px;font-weight:700;font-size:14px;cursor:pointer" onclick="location.reload()">Reload</button>';
         document.body.appendChild(el);
