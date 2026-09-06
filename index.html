@@ -2,7 +2,30 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-  <!-- CSP is enforced via the _headers file (single source of truth — see that file) -->
+  <!-- CSP kept in sync with _headers by hand. Both are enforced together on hosts
+       that read _headers (Cloudflare Pages); this meta tag is what actually takes
+       effect on hosts that don't (GitHub Pages), so it must stay a real copy, not
+       a stub — see the note in the _headers file too. -->
+  <meta http-equiv="Content-Security-Policy" content="
+  default-src 'self';
+  script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'
+    https://cdnjs.cloudflare.com
+    https://cdn.jsdelivr.net
+    https://cdn.sheetjs.com;
+  style-src 'self' 'unsafe-inline'
+    https://fonts.googleapis.com;
+  font-src 'self'
+    https://fonts.gstatic.com;
+  connect-src 'self'
+    https://*.supabase.co
+    https://generativelanguage.googleapis.com
+    https://api.anthropic.com
+    https://api.openai.com
+    https://cdn.jsdelivr.net
+    https://tessdata.projectnaptha.com;
+  img-src 'self' data: blob:;
+  worker-src blob: https://cdn.jsdelivr.net;
+">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title id="page-title">Veltrix</title>
 <meta name="theme-color" content="#06080f">
@@ -4299,6 +4322,13 @@ input.bl-chip-sel[type="number"] { -moz-appearance: textfield; }
         <optgroup label="── Discount Offer ──">
           <option value="generous_1">Discount Offer</option>
           <option value="generous_2">Last Chance Offer</option>
+        </optgroup>
+        <optgroup label="── Field Visit ──">
+          <option value="field_visit_1">Final Warning</option>
+          <option value="field_visit_2">Dispatch In Progress</option>
+        </optgroup>
+        <optgroup label="── Broken Promise ──">
+          <option value="broken_promise_1">Trust Breach</option>
         </optgroup>
         <optgroup label="── Custom ──">
           <option value="custom">Write My Own</option>
@@ -10582,26 +10612,43 @@ function addLogEntry() {
   const amount = parseFloat(document.getElementById('log-amount').value) || 0;
   const notes = document.getElementById('log-notes').value.trim();
   if (!date) return toast('Please select a date', 'error');
-  if (!navigator.onLine) {
-  queueOfflineAction({ type: 'log', date, amount, notes });
-}
   const prevBest = getPersonalBest();
   const existing = state.dailyLog.findIndex(e => e.date === date);
+  let newTotal = amount;
+  let mergedNotes = notes;
   if (existing >= 0) {
-    state.dailyLog[existing] = { date, collected: amount, notes };
-    toast('Log entry updated', 'success');
+    // Adds to whatever this day already has (e.g. auto-tracked from payments
+    // made through the app) instead of replacing it — this form logs an
+    // additional collection, it isn't a correction. Use the Edit button
+    // (openLogEntryEdit) to override/correct a day's total instead.
+    const prevAmt = state.dailyLog[existing].collected || 0;
+    const prevNotes = state.dailyLog[existing].notes || '';
+    newTotal = prevAmt + amount;
+    mergedNotes = notes ? (prevNotes ? prevNotes + ' · ' + notes : notes) : prevNotes;
+    state.dailyLog[existing] = { date, collected: newTotal, notes: mergedNotes };
+    toast('Added ' + fmtC(amount) + ' — day total now ' + fmtC(newTotal), 'success');
   } else {
     state.dailyLog.push({ date, collected: amount, notes });
     toast('Log entry saved', 'success');
+  }
+  // Queue the fully-resolved total (not the raw typed amount) — the offline
+  // replay path sets rather than adds, on the assumption that this device
+  // already resolved the real total locally. Queuing the raw increment here
+  // would make a synced device SET its day to just this small increment,
+  // discarding whatever it already had.
+  if (!navigator.onLine) {
+    queueOfflineAction({ type: 'log', date, amount: newTotal, notes: mergedNotes });
   }
   haptic('pay');
   saveState();
   updateDailyPill();
   document.getElementById('log-amount').value = '';
   document.getElementById('log-notes').value = '';
-  // Check personal best AFTER saving
-  if (amount > prevBest && amount > 0) {
-    checkPersonalBest(amount);
+  // Check personal best against the day's new TOTAL, not just the amount just
+  // typed — logging in installments (e.g. morning + evening) should still be
+  // able to set a new best once the running total for the day passes it.
+  if (newTotal > prevBest && newTotal > 0) {
+    checkPersonalBest(newTotal);
   }
   renderStreakBadge();
   renderLog();
@@ -13710,6 +13757,20 @@ function getSmsBlastMsg(b) {
   }
   if (smsTemplate === 'generous_2') {
     return name + ', LAST CHANCE OFFER. Before we proceed with formal recovery on your ' + type + ' loan, we are offering a final discounted settlement of ' + genAmount + '. Pay this amount today only and we will close your account with no further action. Do not miss this opportunity. Contact us or pay NOW.';
+  }
+
+  // ── FIELD VISIT ── (mirrors Message Bank's "Final Warning – Field Visit"
+  // and Dispatch's M3/M4 field-visit tier, for batch use on a pre-filtered group)
+  if (smsTemplate === 'field_visit_1') {
+    return name + ', FINAL WARNING. Your ' + type + ' loan of ' + amount + ' remains unpaid and a field recovery visit to your registered address is being finalised. You have 24 HOURS to stop it. Pay NOW or contact us immediately.';
+  }
+  if (smsTemplate === 'field_visit_2') {
+    return name + ', FIELD VISIT DISPATCH IN PROGRESS. Your ' + type + ' loan of ' + amount + ' is being escalated to field recovery RIGHT NOW. This is your last chance to pay before an officer arrives at your registered address. Contact us IMMEDIATELY.';
+  }
+
+  // ── BROKEN PROMISE ── (mirrors Message Bank's "Broken Promise – Trust Breach")
+  if (smsTemplate === 'broken_promise_1') {
+    return name + ', BROKEN PROMISE NOTICE. You committed to paying your ' + type + ' loan of ' + amount + ' and that date has passed without payment. This account is now flagged for a broken commitment. Pay TODAY to restore your standing. Contact us NOW.';
   }
 
   return '';
@@ -19897,6 +19958,24 @@ function setPtpOutcome2(bid, outcome) {
       logEntry.collected = (logEntry.collected || 0) + delta;
     }
   }
+  // Manually marking "Broken" here must trigger the same persistent record as
+  // the automatic overnight detection (ptpAutoFlagMissed) — otherwise a promise
+  // an agent flags broken during EOD review leaves no trace on the borrower's
+  // history, doesn't count toward brokenPromiseCount, and never triggers
+  // auto-escalation. Guarded on !b.ptpBreached so this doesn't double-count a
+  // promise the overnight sweep already flagged earlier the same day.
+  if (outcome === 'broken' && !b.ptpBreached) {
+    b.ptpBreached = true;
+    b.brokenPromiseCount = (b.brokenPromiseCount||0) + 1;
+    if (!b.promiseHistory) b.promiseHistory = [];
+    b.promiseHistory.push({
+      rescheduled: new Date().toISOString(),
+      brokenDate: (b.promiseDate||'').split(' ')[0] || new Date().toISOString().split('T')[0],
+      outcome: 'broken',
+      note: 'Promise broken — marked by agent during EOD review'
+    });
+    _maybeAutoEscalate(b);
+  }
   b.ptpOutcome = outcome;
   saveState();
   updateDailyPill();
@@ -20833,7 +20912,15 @@ function savePtpSnapshot2() {
   const partial  = ptps.filter(b => b.ptpOutcome === 'partial').length;
   const broken   = ptps.filter(b => b.ptpOutcome === 'broken').length;
   const pending  = ptps.filter(b => !b.ptpOutcome).length;
-  const collected= ptps.filter(b => b.ptpOutcome === 'paid').reduce((s,b) => s + b.amountPaid, 0);
+  // Sum only TODAY's actual cash (payLog deltas dated today), not each
+  // borrower's lifetime amountPaid — the old version summed the full
+  // cumulative balance for anyone marked "paid" today, which overstated the
+  // day's collected figure for every borrower who'd already made partial
+  // payments on previous days before finally clearing their PTP today.
+  const collected = ptps.reduce((s,b) => {
+    const todaysDelta = (b.payLog||[]).filter(p => p.date === today).reduce((s2,p) => s2 + (p.delta||0), 0);
+    return s + todaysDelta;
+  }, 0);
   if (!state.ptpHistory) state.ptpHistory = [];
   const entry = { date: today, total: ptps.length, honoured, partial, broken, pending, collected };
   const idx = state.ptpHistory.findIndex(d => d.date === today);
@@ -26712,7 +26799,41 @@ loadChartJS().catch(e => console.warn('Chart.js failed to load:', e));
 
   if ('serviceWorker' in navigator) {
     // Use a relative path so it works on both root and subfolder (GitHub Pages)
-    navigator.serviceWorker.register('./sw.js', {scope: './'}).catch(function() {});
+    navigator.serviceWorker.register('./sw.js', {scope: './'}).then(function(reg) {
+      // Update detection — this is a work tool people leave open all day, so
+      // relying on the browser's own (slow, undocumented-interval) SW update
+      // check isn't good enough. Actively poll for a new sw.js periodically,
+      // and the moment a new one finishes installing, prompt to reload rather
+      // than silently leaving the tab on old code indefinitely.
+      function promptReload() {
+        if (document.getElementById('sq-update-banner')) return; // already shown
+        var el = document.createElement('div');
+        el.id = 'sq-update-banner';
+        el.style.cssText = 'position:fixed;left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));z-index:99999;background:var(--gold,#f0a030);color:#000;border-radius:14px;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px;box-shadow:0 6px 24px rgba(0,0,0,0.35);font-family:inherit;font-size:14px;font-weight:600';
+        el.innerHTML = '<span>A new version is ready.</span>'
+          + '<button style="background:#000;color:var(--gold,#f0a030);border:none;border-radius:8px;padding:8px 14px;font-weight:700;font-size:14px;cursor:pointer" onclick="location.reload()">Reload</button>';
+        document.body.appendChild(el);
+      }
+      reg.addEventListener('updatefound', function() {
+        var installing = reg.installing;
+        if (!installing) return;
+        installing.addEventListener('statechange', function() {
+          // 'installed' + an existing controller means this is an UPDATE to an
+          // already-running app, not the very first install on this device.
+          if (installing.state === 'installed' && navigator.serviceWorker.controller) {
+            promptReload();
+          }
+        });
+      });
+      // Check for a new sw.js on load, then every 5 minutes while the tab
+      // stays open — this is what actually notices a new deployment for
+      // someone who just leaves the app running all day.
+      reg.update().catch(function() {});
+      setInterval(function() { reg.update().catch(function() {}); }, 5 * 60 * 1000);
+      document.addEventListener('visibilitychange', function() {
+        if (document.visibilityState === 'visible') reg.update().catch(function() {});
+      });
+    }).catch(function() {});
   }
 
   // PWA install logic — persists installed state in localStorage

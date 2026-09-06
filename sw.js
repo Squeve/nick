@@ -10,7 +10,7 @@
 //      shell, since this app is updated frequently and a stale cache
 //      silently serving old code is worse than no offline support at all.
 
-const CACHE_NAME = 'squevetrack-v1';
+const CACHE_NAME = 'squevetrack-v2';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting(); // activate immediately, don't wait for old tabs to close
@@ -25,11 +25,19 @@ self.addEventListener('activate', (event) => {
 // online load always gets the freshest index.html, so a new deployment is
 // never masked by an old cached copy. The cache only exists as a safety
 // net for the moment connectivity drops.
+//
+// { cache: 'no-store' } is the critical part here: without it, this fetch()
+// is still subject to the BROWSER's own HTTP cache, which can serve a
+// stale response without hitting the network at all — regardless of what
+// this file's intent is. This matters a lot on hosts (GitHub Pages) that
+// don't support the project's _headers file, so index.html has no
+// Cache-Control header telling the browser not to do that. no-store makes
+// this fetch bypass the HTTP cache unconditionally, on every host.
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return; // never cache POST/PUT/etc.
 
   event.respondWith(
-    fetch(event.request)
+    fetch(event.request, { cache: 'no-store' })
       .then((response) => {
         const copy = response.clone();
         caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy)).catch(() => {});
