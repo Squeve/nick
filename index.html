@@ -8071,9 +8071,9 @@ function renderDashEmptyState(active) {
         ＋ Add First Borrower
       </button>
       <div style="margin-top:16px;display:flex;justify-content:center;gap:20px;flex-wrap:wrap">
-        <button onclick="navigate('messagebank')" style="background:none;border:none;color:var(--text3);font-size:var(--text-base);cursor:pointer;font-family:var(--font-body)"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H8l-4 4z"/></svg></span> Message Bank</button>
-        <button onclick="navigate('log')" style="background:none;border:none;color:var(--text3);font-size:var(--text-base);cursor:pointer;font-family:var(--font-body)"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15" rx="2"/><line x1="3.5" y1="9.5" x2="20.5" y2="9.5"/><line x1="8" y1="3" x2="8" y2="7"/><line x1="16" y1="3" x2="16" y2="7"/></svg></span> Daily Log</button>
-        <button onclick="navigate('health')" style="background:none;border:none;color:var(--text3);font-size:var(--text-base);cursor:pointer;font-family:var(--font-body)"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 13.5a1.7 1.7 0 000-3l1-1.7-2-2-1.7 1a1.7 1.7 0 00-3 0l-.3-2h-2.8l-.3 2a1.7 1.7 0 00-3 0l-1.7-1-2 2 1 1.7a1.7 1.7 0 000 3l-1 1.7 2 2 1.7-1a1.7 1.7 0 003 0l.3 2h2.8l.3-2a1.7 1.7 0 003 0l1.7 1 2-2z"/></svg></span> Settings</button>
+        <button onclick="navigate('messagebank')" style="background:none;border:none;color:var(--text3);font-size:var(--text-base);cursor:pointer;font-family:var(--font-body);padding:8px"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H8l-4 4z"/></svg></span> Message Bank</button>
+        <button onclick="navigate('log')" style="background:none;border:none;color:var(--text3);font-size:var(--text-base);cursor:pointer;font-family:var(--font-body);padding:8px"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15" rx="2"/><line x1="3.5" y1="9.5" x2="20.5" y2="9.5"/><line x1="8" y1="3" x2="8" y2="7"/><line x1="16" y1="3" x2="16" y2="7"/></svg></span> Daily Log</button>
+        <button onclick="navigate('health')" style="background:none;border:none;color:var(--text3);font-size:var(--text-base);cursor:pointer;font-family:var(--font-body);padding:8px"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 13.5a1.7 1.7 0 000-3l1-1.7-2-2-1.7 1a1.7 1.7 0 00-3 0l-.3-2h-2.8l-.3 2a1.7 1.7 0 00-3 0l-1.7-1-2 2 1 1.7a1.7 1.7 0 000 3l-1 1.7 2 2 1.7-1a1.7 1.7 0 003 0l.3 2h2.8l.3-2a1.7 1.7 0 003 0l1.7 1 2-2z"/></svg></span> Settings</button>
       </div>
     </div>`;
 }
@@ -11970,7 +11970,8 @@ function importFromXLSX() {
     var principal = parseFloat(row.principal) || parseFloat(row.loandue) || 0;
     var amountPaid = parseFloat(row.amountpaid) || 0;
     var loanType = (row.loantype || 'LoanBase').trim();
-    var odAge    = parseInt(row.odage) || 6;
+    var odAgeParsed = parseInt(row.odage);
+    var odAge = isNaN(odAgeParsed) ? 6 : odAgeParsed;
 
     if (!name || !loanDue) { skipped++; return; }
 
@@ -11980,7 +11981,11 @@ function importFromXLSX() {
 
     // Validate loanType
     if (loanType !== 'LoanBase' && loanType !== 'LoanBase Pro') loanType = 'LoanBase';
-    if (odAge < 1 || odAge > 30) odAge = 6;
+    // Was clamped to 1-30, silently resetting any legitimately-overdue borrower
+    // past day 30 (a very normal thing to import — a takeover book, or a batch
+    // of borrowers already in M3/M4/M5) back down to day 6. Widened to the
+    // app's actual realistic range instead of an arbitrary early-stage-only band.
+    if (odAge < 0 || odAge > 365) odAge = 6;
 
     // Compute startDate from odAge
     var d = new Date();
@@ -12034,7 +12039,8 @@ function importFromCSV() {
       const row = line.split(',').map(c => c.trim().replace(/^"|"$/g,''));
       const name = toTitleCaseName(get(row,'name')); const loanDue = get(row,'loandue');
       if (!name || !loanDue) { skipped++; return; }
-      const odAge = parseInt(get(row,'odage')) || 6;
+      const odAgeParsedCsv = parseInt(get(row,'odage'));
+      const odAge = isNaN(odAgeParsedCsv) ? 6 : odAgeParsedCsv;
       const d = new Date(); d.setDate(d.getDate() - (odAge - 1));  // store (odAge-1) days ago so getOdAge returns odAge
       state.borrowers.push({
         id: (crypto && crypto.randomUUID ? crypto.randomUUID() : 'b' + Date.now() + Math.random().toString(36).slice(2)),
@@ -19104,10 +19110,20 @@ function generateReport(type) {
   const paid = state.borrowers.filter(b => getStatus(b) === 'Paid');
   const partial = state.borrowers.filter(b => getStatus(b) === 'Partial');
   const ptpToday = state.borrowers.filter(b => b.promisedToPay && b.promiseDate && b.promiseDate.startsWith(todayKey));
-  const ptpHonoured = ptpToday.filter(b => b.amountPaid > 0);
+  // ptpOutcome === 'paid' reflects whether TODAY's specific promise was kept —
+  // not b.amountPaid > 0, which is the borrower's entire lifetime payment total.
+  // The old check meant anyone who'd ever paid anything, even months ago on a
+  // completely different promise, counted as "honoured" today, inflating this
+  // number in every EOD/weekly report sent to your supervisor.
+  const ptpHonoured = ptpToday.filter(b => b.ptpOutcome === 'paid');
   const outstanding = active.reduce((s,b) => s+getRemaining(b),0);
   const totalCollected = state.dailyLog.reduce((s,e) => s+(e.collected||0),0);
-  const rate = active.length > 0 ? ((state.borrowers.filter(b=>b.amountPaid>0).length / state.borrowers.length)*100).toFixed(1) : '0.0';
+  // Recovery Rate = actual money collected ÷ total loan value owed — not the
+  // old definition (borrowers who've paid ANYTHING at all ÷ total borrowers),
+  // which rated someone who paid ₵1 once identically to someone who paid off
+  // their entire loan. This is the standard portfolio recovery-rate meaning.
+  const totalDue = state.borrowers.reduce((s,b) => s+(b.loanDue||0),0);
+  const rate = totalDue > 0 ? ((totalCollected/totalDue)*100).toFixed(1) : '0.0';
 
   let title, text;
   if (type === 'morning') {
@@ -19133,7 +19149,7 @@ function generateReport(type) {
 }
 function copyReport() {
   const text = document.getElementById('report-output-text')?.textContent || '';
-  navigator.clipboard.writeText(text).then(() => toast('Report copied!','success'));
+  _copyTextSafe(text).then(ok => toast(ok ? 'Report copied!' : 'Could not copy — try Share instead', ok ? 'success' : 'error'));
 }
 function whatsappReport() {
   const text = document.getElementById('report-output-text')?.textContent || '';
@@ -21216,7 +21232,15 @@ function toggleKeyVis(inputId, btn) {
   var inp = document.getElementById(inputId);
   if (!inp) return;
   inp.type = inp.type === 'password' ? 'text' : 'password';
-  if (btn) btn.textContent = inp.type === 'password' ? '' : '';
+  if (!btn) return;
+  // Swap the icon between "eye" (masked, tap to reveal) and "eye-off" (revealed,
+  // tap to hide) — the old version set btn.textContent = '' on BOTH branches,
+  // which doesn't just fail to swap the icon, it deletes the icon's child SVG
+  // outright the first time anyone taps it, leaving a permanently blank button.
+  var revealed = inp.type === 'text';
+  btn.innerHTML = revealed
+    ? '<span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18"/><path d="M10.6 5.1A10.6 10.6 0 0112 5c6 0 10 7 10 7a17.6 17.6 0 01-3.2 4"/><path d="M6.6 6.6C3.8 8.4 2 12 2 12s4 7 10 7a10 10 0 004.4-1"/><path d="M9.9 9.9a3 3 0 004.2 4.2"/></svg></span>'
+    : '<span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg></span>';
 }
 
 function initScanProviderUI() {
@@ -21367,7 +21391,7 @@ async function _runAiScan(file, statusEl, promptText) {
     var resp = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'content-type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true' },
-      body: JSON.stringify({ model:'claude-opus-4-5', max_tokens:2048, messages:[{ role:'user', content:[{ type:'image', source:{ type:'base64', media_type:mimeType, data:base64 } },{ type:'text', text:prompt }] }] })
+      body: JSON.stringify({ model:'claude-opus-5', max_tokens:2048, messages:[{ role:'user', content:[{ type:'image', source:{ type:'base64', media_type:mimeType, data:base64 } },{ type:'text', text:prompt }] }] })
     });
     if (!resp.ok) { var e = await resp.json().catch(function(){return{};}); throw new Error('Claude error ' + resp.status + ': ' + (e.error&&e.error.message||'check your API key')); }
     var d = await resp.json();
@@ -24811,7 +24835,7 @@ function openProfileEditModal() {
     +'<input type="text" id="profile-edit-name" class="form-input" value="'+displayName+'" placeholder="Your full name" style="margin-top:6px;font-size:var(--text-xl);font-weight:600" autofocus>'
     +'<div style="font-size:var(--text-sm);color:var(--text3);margin-top:5px">Shows on lock screen. Login code is unchanged.</div>'
     +'</div>'
-    +(_activeAgent.lbCode ? '<div style="background:var(--surface2);border-radius:var(--radius-md);padding:10px 14px;display:flex;align-items:center;justify-content:space-between;margin-bottom:4px"><div><div style="font-size:var(--text-xs);color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:2px">Your Agent Login Code</div><div style="font-family:var(--font-mono);font-size:var(--text-md);font-weight:700;color:var(--gold)">' + _activeAgent.lbCode + '</div></div><button onclick="settingsCopyCode()" style="background:none;border:none;cursor:pointer;font-size:var(--text-3xl)" title="Copy"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="12" height="17" rx="2"/><rect x="9" y="2" width="6" height="4" rx="1"/><line x1="9" y1="11" x2="15" y2="11"/><line x1="9" y1="15" x2="15" y2="15"/></svg></span></button></div>' : '')
+    +(_activeAgent.lbCode ? '<div style="background:var(--surface2);border-radius:var(--radius-md);padding:10px 14px;display:flex;align-items:center;justify-content:space-between;margin-bottom:4px"><div><div style="font-size:var(--text-xs);color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:2px">Your Agent Login Code</div><div style="font-family:var(--font-mono);font-size:var(--text-md);font-weight:700;color:var(--gold)">' + _activeAgent.lbCode + '</div></div><button onclick="settingsCopyCode()" style="background:none;border:none;cursor:pointer;font-size:var(--text-3xl);padding:8px" title="Copy"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="12" height="17" rx="2"/><rect x="9" y="2" width="6" height="4" rx="1"/><line x1="9" y1="11" x2="15" y2="11"/><line x1="9" y1="15" x2="15" y2="15"/></svg></span></button></div>' : '')
 ;
 
   document.getElementById('modal-footer').innerHTML =
@@ -25497,7 +25521,7 @@ const MSG_CATEGORY_META = {
   'Partial Payment Encouragement':            { short: 'Partial Payment', color: '#a78bfa' },
   'Broken Promise – Trust Breach':            { short: 'Broken Promise',  color: '#e11d48' },
   'Settlement Offer – Reduced Payoff':        { short: 'Settlement Offer', color: '#0ea5e9' },
-  'Final Warning – Field Visit':              { short: 'Final Warning',   color: '#7c2d12' }
+  'Final Warning – Field Visit':              { short: 'Final Warning',   color: '#c2410c' }
 };
 
 function msgBankClearFilters() {
@@ -25692,10 +25716,10 @@ function renderMessageBank() {
             <div style="font-size:var(--text-xs);color:var(--text3);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${preview}</div>
           </div>
           <button onclick="event.stopPropagation();msgBankCopyFromCard('${msg.id}','${msg._custom?'custom':''}')"
-                  style="background:none;border:none;font-size:var(--text-lg);cursor:pointer;color:var(--text3);flex-shrink:0"
+                  style="background:none;border:none;font-size:var(--text-lg);cursor:pointer;color:var(--text3);flex-shrink:0;min-width:40px;min-height:40px;display:flex;align-items:center;justify-content:center;margin:-8px"
                   title="Copy message"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="12" height="17" rx="2"/><rect x="9" y="2" width="6" height="4" rx="1"/><line x1="9" y1="11" x2="15" y2="11"/><line x1="9" y1="15" x2="15" y2="15"/></svg></span></button>
           <button onclick="event.stopPropagation();msgBankToggleFavorite('${msg.id}')"
-                  style="background:none;border:none;font-size:var(--text-2xl);cursor:pointer;color:${isFav?'var(--gold)':'var(--text3)'};flex-shrink:0"
+                  style="background:none;border:none;font-size:var(--text-2xl);cursor:pointer;color:${isFav?'var(--gold)':'var(--text3)'};flex-shrink:0;min-width:40px;min-height:40px;display:flex;align-items:center;justify-content:center;margin:-8px"
                   title="${isFav?'Remove from favorites':'Add to favorites'}">${isFav?'<span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l2.6 5.8 6.4.6-4.8 4.3 1.4 6.3L12 16.9 6.4 20l1.4-6.3L3 9.4l6.4-.6z" fill="currentColor" stroke="none"/></svg></span>':'<span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l2.6 5.8 6.4.6-4.8 4.3 1.4 6.3L12 16.9 6.4 20l1.4-6.3L3 9.4l6.4-.6z"/></svg></span>'}</button>
         </div>
       </div>`;
@@ -25887,10 +25911,10 @@ function openMessageDetail(msgId, type) {
       ${msg.subStage ? `<span><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="5" width="17" height="15" rx="2"/><line x1="3.5" y1="9.5" x2="20.5" y2="9.5"/><line x1="8" y1="3" x2="8" y2="7"/><line x1="16" y1="3" x2="16" y2="7"/></svg></span> Stage days: ${msg.subStage}</span><br>` : ''}
       ${msg.tone    ? `<span><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10v4h4l6 4V6l-6 4z"/><path d="M17 9a4 4 0 010 6"/><path d="M20 7a7 7 0 010 10"/></svg></span> Tone: ${msg.tone}</span><br>` : ''}
     </div>
-    <button onclick="msgBankToggleFavorite('${msgId}')" style="margin-top:10px;background:none;border:none;font-size:var(--text-4xl);cursor:pointer;color:${isFav?'var(--gold)':'var(--text3)'}">
+    <button onclick="msgBankToggleFavorite('${msgId}')" style="margin-top:10px;background:none;border:none;font-size:var(--text-4xl);cursor:pointer;color:${isFav?'var(--gold)':'var(--text3)'};padding:8px">
       ${isFav ? '<span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l2.6 5.8 6.4.6-4.8 4.3 1.4 6.3L12 16.9 6.4 20l1.4-6.3L3 9.4l6.4-.6z" fill="currentColor" stroke="none"/></svg></span> Remove favorite' : '<span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l2.6 5.8 6.4.6-4.8 4.3 1.4 6.3L12 16.9 6.4 20l1.4-6.3L3 9.4l6.4-.6z"/></svg></span> Add to favorites'}
     </button>
-    ${isCustom?`<button onclick="msgBankDeleteCustom('${msgId}')" style="margin-top:10px;margin-left:8px;background:none;border:none;font-size:var(--text-base);cursor:pointer;color:var(--red)"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9 7V4.5a1 1 0 011-1h4a1 1 0 011 1V7"/><path d="M6 7l1 13a2 2 0 002 2h6a2 2 0 002-2l1-13"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg></span> Delete</button>`:''}
+    ${isCustom?`<button onclick="msgBankDeleteCustom('${msgId}')" style="margin-top:10px;margin-left:8px;background:none;border:none;font-size:var(--text-base);cursor:pointer;color:var(--red);padding:8px"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"/><path d="M9 7V4.5a1 1 0 011-1h4a1 1 0 011 1V7"/><path d="M6 7l1 13a2 2 0 002 2h6a2 2 0 002-2l1-13"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg></span> Delete</button>`:''}
   `;
   document.getElementById('modal-footer').innerHTML = `
     <button class="btn btn-ghost" onclick="closeModal()">Close</button>
